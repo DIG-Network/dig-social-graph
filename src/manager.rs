@@ -110,13 +110,15 @@ where
         let their_store = self.require_their_store(peer)?;
         let offer = self.seal_offer(peer, &our_coords)?;
 
-        // We now maintain the peer's profile store.
-        self.subscriber.subscribe(&their_store).map_err(seam)?;
-
+        // Guard-before-side-effect: validate the transition FIRST, so an approve that is not legal
+        // in the current state cannot subscribe to the peer's store ahead of the consent gate.
         let connection = self.require_connection_mut(peer)?;
+        connection.apply(ConnectionEvent::Approved)?;
         connection.presented_local_did = Some(presented_local_did.clone());
         connection.our_offer = Some(our_coords);
-        connection.apply(ConnectionEvent::Approved)?;
+
+        // Only now that consent is recorded do we begin maintaining the peer's profile store.
+        self.subscriber.subscribe(&their_store).map_err(seam)?;
 
         let message = SocialMessage::Accept(ConnectAccept {
             recipient_offer: offer,
@@ -138,13 +140,12 @@ where
     /// Revoke a live connection — stop serving + unsubscribe the peer's store, notify them, and move
     /// to [`Revoked`](crate::state::ConnectionState::Revoked).
     pub fn revoke(&mut self, peer: &Did, presented_local_did: &Did) -> Result<()> {
-        if let Some(their_store) = self.graph.get(peer).and_then(|c| c.their_store.clone()) {
-            self.subscriber.unsubscribe(&their_store).map_err(seam)?;
-        }
-        let message = SocialMessage::Revoke(Revoke);
-        self.send(presented_local_did, peer, &message)?;
+        // Guard-before-side-effect: only a live connection can be revoked.
         self.require_connection_mut(peer)?
             .apply(ConnectionEvent::Revoked)?;
+        self.tear_down_data_plane(peer)?;
+        let message = SocialMessage::Revoke(Revoke);
+        self.send(presented_local_did, peer, &message)?;
         self.persist()
     }
 
@@ -180,10 +181,15 @@ where
     /// [`Connected`]: crate::state::ConnectionState::Connected
     fn on_accept(&mut self, sender: &Did, accept: &ConnectAccept) -> Result<()> {
         let their_store = self.open_offer(&accept.recipient_offer)?;
-        self.subscriber.subscribe(&their_store).map_err(seam)?;
+
+        // Guard-before-side-effect: validate the transition FIRST. A replayed or injected Accept on
+        // a Revoked/Denied/otherwise-ineligible connection must NOT subscribe — otherwise it would
+        // resurrect the data-plane of a revoked connection or bypass the handshake ordering.
         let connection = self.require_connection_mut(sender)?;
-        connection.their_store = Some(their_store);
         connection.apply(ConnectionEvent::AcceptReceived)?;
+        connection.their_store = Some(their_store.clone());
+
+        self.subscriber.subscribe(&their_store).map_err(seam)?;
         self.persist()
     }
 
@@ -194,17 +200,28 @@ where
         self.persist()
     }
 
-    /// Record an inbound revocation: unsubscribe + mark revoked.
+    /// Record an inbound revocation: mark revoked, then tear down the data-plane.
     fn on_revoke(&mut self, sender: &Did) -> Result<()> {
-        if let Some(their_store) = self.graph.get(sender).and_then(|c| c.their_store.clone()) {
-            self.subscriber.unsubscribe(&their_store).map_err(seam)?;
-        }
+        // Guard-before-side-effect: only a live connection can be revoked.
         self.require_connection_mut(sender)?
             .apply(ConnectionEvent::Revoked)?;
+        self.tear_down_data_plane(sender)?;
         self.persist()
     }
 
     // --- helpers ----------------------------------------------------------------------------
+
+    /// Stop maintaining a peer's profile store and drop its coordinates, so a revoked connection has
+    /// no data-plane left for a late or replayed `Accept` to resurrect (invariant #4).
+    fn tear_down_data_plane(&mut self, peer: &Did) -> Result<()> {
+        if let Some(their_store) = self.graph.get(peer).and_then(|c| c.their_store.clone()) {
+            self.subscriber.unsubscribe(&their_store).map_err(seam)?;
+        }
+        if let Some(connection) = self.graph.get_mut(peer) {
+            connection.their_store = None;
+        }
+        Ok(())
+    }
 
     /// Seal our coordinates to a recipient, producing a [`SealedOffer`].
     fn seal_offer(&self, recipient: &Did, coords: &StoreCoords) -> Result<SealedOffer> {

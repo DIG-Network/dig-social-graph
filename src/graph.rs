@@ -25,8 +25,11 @@ pub struct Connection {
     /// The remote peer's DID — the connection's identity and map key.
     #[serde(with = "codec::did_str")]
     pub peer: Did,
-    /// Where this connection is in its lifecycle.
-    pub state: ConnectionState,
+    /// Where this connection is in its lifecycle. PRIVATE by design: the state may only change
+    /// through [`Connection::apply`] (the pure state machine), never by direct assignment — so no
+    /// consumer can inject an illegal state (e.g. a fabricated `Connected`). Read it via
+    /// [`Connection::state`].
+    state: ConnectionState,
     /// Which of the local user's DIDs is presented to THIS peer (decoupled from the globally active
     /// profile). `None` until the local side has offered.
     #[serde(with = "codec::opt_did_str", default)]
@@ -52,8 +55,13 @@ impl Connection {
         }
     }
 
+    /// The connection's current lifecycle state (read-only; mutate only via [`apply`](Connection::apply)).
+    pub fn state(&self) -> ConnectionState {
+        self.state
+    }
+
     /// Advance this connection by one [`ConnectionEvent`], updating [`state`](Connection::state) via
-    /// the pure state machine.
+    /// the pure state machine. This is the ONLY way the state changes.
     pub fn apply(&mut self, event: ConnectionEvent) -> Result<()> {
         self.state = self.state.apply(event)?;
         Ok(())
@@ -100,8 +108,11 @@ impl SocialGraph {
         self.connections.values()
     }
 
-    /// Insert or replace a connection.
-    pub fn upsert(&mut self, connection: Connection) {
+    /// Insert or replace a connection. Crate-internal: connections enter the graph ONLY through
+    /// [`initiate`](SocialGraph::initiate) / [`receive_request`](SocialGraph::receive_request), which
+    /// fix the initial state — so an external caller cannot smuggle in a connection with a fabricated
+    /// state via a raw insert.
+    pub(crate) fn upsert(&mut self, connection: Connection) {
         self.connections
             .insert(connection.peer.as_str().to_owned(), connection);
     }

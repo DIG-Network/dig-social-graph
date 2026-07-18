@@ -1,10 +1,11 @@
 //! The crate's error surface.
 //!
-//! Two failure kinds only, because the networkless core does very little that can fail: an
-//! [`Error::IllegalTransition`] when a [`ConnectionEvent`] is applied to a state that does not
-//! accept it (the state machine is a total function — every illegal pair is rejected, never
-//! silently ignored), and an [`Error::Seam`] when an injected seam (transport, sealer, subscriber,
-//! persistence) reports a failure the core cannot resolve itself.
+//! The networkless core does very little that can fail, so there are only four failure kinds:
+//! [`Error::IllegalTransition`] (a [`ConnectionEvent`] applied to a state that does not accept it —
+//! the state machine is a total function, every illegal pair rejected, never silently ignored),
+//! [`Error::Invariant`] (a caller invariant was violated, e.g. an offer-less request or a
+//! store/DID mismatch), [`Error::Seam`] (an injected seam reported a failure the core cannot
+//! resolve), and [`Error::Wire`] (a byte buffer did not decode as the expected canonical wire type).
 //!
 //! [`ConnectionEvent`]: crate::state::ConnectionEvent
 

@@ -10,9 +10,10 @@
 //! The four locked protocol decisions are encoded structurally, so a wrong handshake is
 //! unrepresentable rather than merely discouraged:
 //!
-//! - **Offer-first.** The only way to leave the initial state is by having attached an offer
-//!   ([`ConnectionEvent::RequestSent`] is emitted by [`SocialGraph`] only once a valid own-offer
-//!   exists), so you can never take a peer's profile without presenting your own.
+//! - **Offer-first.** A connection is created only through
+//!   [`SocialGraph::initiate`](crate::graph::SocialGraph::initiate) /
+//!   [`SocialGraph::receive_request`](crate::graph::SocialGraph::receive_request), both of which
+//!   require an offer be attached, so you can never take a peer's profile without presenting your own.
 //! - **Symmetric.** Both sides pass through an *offered* state ([`RequestorOffered`] /
 //!   [`RecipientOffered`]) before [`Connected`] — each end selects a profile and consents.
 //! - **Synchronous.** [`Connected`] is reachable only from an offered state via a live
@@ -35,7 +36,6 @@
 //! [`AcceptReceived`]: ConnectionEvent::AcceptReceived
 //! [`MutualConfirmed`]: ConnectionEvent::MutualConfirmed
 //! [`Approved`]: ConnectionEvent::Approved
-//! [`SocialGraph`]: crate::graph::SocialGraph
 
 use serde::{Deserialize, Serialize};
 
@@ -108,12 +108,8 @@ impl Suspended {
 /// the machine decides only the next *state*, which keeps it a small, exhaustively testable function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConnectionEvent {
-    /// Outbound: the local node created a request with its own offer attached (offer-first).
-    RequestSent,
     /// Outbound: the request was delivered to the peer.
     RequestDelivered,
-    /// Inbound: a peer's request (with their offer) was received.
-    RequestReceived,
     /// Inbound: the local user selected a profile and approved the request.
     Approved,
     /// The request was declined (by the local user inbound, or by the peer outbound).

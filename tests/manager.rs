@@ -57,7 +57,7 @@ fn outbound_request_online_offers_first_and_delivers() {
         .unwrap();
 
     let conn = mgr.graph().get(&peer).unwrap();
-    assert_eq!(conn.state, ConnectionState::RequestorOffered);
+    assert_eq!(conn.state(), ConnectionState::RequestorOffered);
     assert_eq!(conn.presented_local_did.as_ref(), Some(&me));
     // Offer-first: our own coordinates were the thing offered.
     assert_eq!(sent_offer_coords(&transport), my_coords);
@@ -74,14 +74,14 @@ fn outbound_request_offline_parks_for_rendezvous_then_resumes() {
     mgr.request(peer.clone(), me.clone(), make_coords(&me, 0xAA))
         .unwrap();
     assert!(matches!(
-        mgr.graph().get(&peer).unwrap().state,
+        mgr.graph().get(&peer).unwrap().state(),
         ConnectionState::PendingRendezvous(_)
     ));
     assert!(transport.sent.borrow().is_empty(), "offline: nothing sent");
 
     mgr.resume_peer(&peer).unwrap();
     assert_eq!(
-        mgr.graph().get(&peer).unwrap().state,
+        mgr.graph().get(&peer).unwrap().state(),
         ConnectionState::Requested
     );
 }
@@ -117,14 +117,14 @@ fn inbound_request_then_approve_subscribes_and_offers_back() {
     };
     mgr.handle_incoming(&envelope).unwrap();
     assert_eq!(
-        mgr.graph().get(&peer).unwrap().state,
+        mgr.graph().get(&peer).unwrap().state(),
         ConnectionState::AwaitingRecipientSelect
     );
 
     // Approve: subscribe to their store, offer ours back.
     mgr.approve(&peer, me.clone(), my_coords.clone()).unwrap();
     let conn = mgr.graph().get(&peer).unwrap();
-    assert_eq!(conn.state, ConnectionState::RecipientOffered);
+    assert_eq!(conn.state(), ConnectionState::RecipientOffered);
     assert_eq!(conn.their_store.as_ref(), Some(&their_coords));
     assert_eq!(subscriber.subscribed.borrow().as_slice(), &[their_coords]);
     assert_eq!(sent_offer_coords(&transport), my_coords);
@@ -161,7 +161,7 @@ fn outbound_accept_received_reaches_connected_and_subscribes() {
     mgr.handle_incoming(&envelope).unwrap();
 
     let conn = mgr.graph().get(&peer).unwrap();
-    assert_eq!(conn.state, ConnectionState::Connected);
+    assert_eq!(conn.state(), ConnectionState::Connected);
     assert_eq!(conn.their_store.as_ref(), Some(&their_coords));
     assert_eq!(subscriber.subscribed.borrow().len(), 1);
 }
@@ -188,7 +188,7 @@ fn revoke_unsubscribes_and_terminates() {
 
     mgr.revoke(&peer, &me).unwrap();
     assert_eq!(
-        mgr.graph().get(&peer).unwrap().state,
+        mgr.graph().get(&peer).unwrap().state(),
         ConnectionState::Revoked
     );
     assert_eq!(subscriber.unsubscribed.borrow().as_slice(), &[their_coords]);
@@ -210,7 +210,7 @@ fn inbound_deny_terminates_outbound_connection() {
     })
     .unwrap();
     assert_eq!(
-        mgr.graph().get(&peer).unwrap().state,
+        mgr.graph().get(&peer).unwrap().state(),
         ConnectionState::Denied
     );
 }
@@ -233,7 +233,7 @@ fn local_deny_notifies_and_terminates() {
 
     mgr.deny(&peer, &me).unwrap();
     assert_eq!(
-        mgr.graph().get(&peer).unwrap().state,
+        mgr.graph().get(&peer).unwrap().state(),
         ConnectionState::Denied
     );
     assert!(matches!(
@@ -252,4 +252,116 @@ fn persistence_failure_surfaces() {
     assert!(mgr
         .request(peer, me.clone(), make_coords(&me, 0xAA))
         .is_err());
+}
+
+/// An accept envelope from `peer` to `me` offering `their_coords` (passthrough-sealed).
+fn accept_envelope(
+    peer: &dig_social_graph::Did,
+    me: &dig_social_graph::Did,
+    their: &StoreCoords,
+) -> SealedEnvelope {
+    SealedEnvelope {
+        sender: peer.clone(),
+        recipient: me.clone(),
+        payload: SocialMessage::Accept(dig_social_graph::ConnectAccept {
+            recipient_offer: dig_social_graph::SealedOffer::new(their.to_canonical_bytes()),
+        })
+        .to_canonical_bytes(),
+    }
+}
+
+/// A request envelope from `peer` to `me` offering `their_coords` (passthrough-sealed).
+fn request_envelope(
+    peer: &dig_social_graph::Did,
+    me: &dig_social_graph::Did,
+    their: &StoreCoords,
+) -> SealedEnvelope {
+    SealedEnvelope {
+        sender: peer.clone(),
+        recipient: me.clone(),
+        payload: SocialMessage::Request(dig_social_graph::ConnectRequest {
+            requestor_offer: dig_social_graph::SealedOffer::new(their.to_canonical_bytes()),
+        })
+        .to_canonical_bytes(),
+    }
+}
+
+/// Regression (guard-before-side-effect): a replayed Accept AFTER revoke must NOT re-subscribe —
+/// the transition is illegal in `Revoked`, so the subscribe side-effect never fires and the revoked
+/// connection's data-plane is not resurrected.
+#[test]
+fn replayed_accept_after_revoke_does_not_resubscribe() {
+    let (mut mgr, _t, subscriber, _p) = manager(true);
+    let me = make_did(0x01);
+    let peer = make_did(0x02);
+    let their_coords = make_coords(&peer, 0xBB);
+
+    mgr.request(peer.clone(), me.clone(), make_coords(&me, 0xAA))
+        .unwrap();
+    let accept = accept_envelope(&peer, &me, &their_coords);
+    mgr.handle_incoming(&accept).unwrap();
+    mgr.revoke(&peer, &me).unwrap();
+
+    let subscribes_after_revoke = subscriber.subscribed.borrow().len();
+    // Replay the exact same Accept the peer sent earlier.
+    assert!(mgr.handle_incoming(&accept).is_err());
+    assert_eq!(
+        subscriber.subscribed.borrow().len(),
+        subscribes_after_revoke,
+        "a replayed Accept on a Revoked connection must not subscribe"
+    );
+    assert_eq!(
+        mgr.graph().get(&peer).unwrap().state(),
+        ConnectionState::Revoked
+    );
+}
+
+/// Regression (consent gate): an Accept injected while the connection is still awaiting the local
+/// user's approval must NOT subscribe — the transition is illegal pre-consent.
+#[test]
+fn accept_before_consent_does_not_subscribe() {
+    let (mut mgr, _t, subscriber, _p) = manager(true);
+    let me = make_did(0x01);
+    let peer = make_did(0x02);
+    let their_coords = make_coords(&peer, 0xBB);
+
+    // Inbound request → AwaitingRecipientSelect (not yet approved).
+    mgr.handle_incoming(&request_envelope(&peer, &me, &their_coords))
+        .unwrap();
+    assert_eq!(
+        mgr.graph().get(&peer).unwrap().state(),
+        ConnectionState::AwaitingRecipientSelect
+    );
+
+    // An injected Accept must be rejected without any subscribe.
+    assert!(mgr
+        .handle_incoming(&accept_envelope(&peer, &me, &their_coords))
+        .is_err());
+    assert!(subscriber.subscribed.borrow().is_empty());
+    assert_eq!(
+        mgr.graph().get(&peer).unwrap().state(),
+        ConnectionState::AwaitingRecipientSelect
+    );
+}
+
+/// Regression (invariant #4): revoke clears `their_store`, so a revoked connection has no data-plane
+/// coordinates left for a late/replayed Accept to resurrect.
+#[test]
+fn revoke_clears_their_store() {
+    let (mut mgr, _t, _s, _p) = manager(true);
+    let me = make_did(0x01);
+    let peer = make_did(0x02);
+    let their_coords = make_coords(&peer, 0xBB);
+
+    mgr.request(peer.clone(), me.clone(), make_coords(&me, 0xAA))
+        .unwrap();
+    mgr.handle_incoming(&accept_envelope(&peer, &me, &their_coords))
+        .unwrap();
+    assert!(mgr.graph().get(&peer).unwrap().their_store.is_some());
+
+    mgr.revoke(&peer, &me).unwrap();
+    assert!(
+        mgr.graph().get(&peer).unwrap().their_store.is_none(),
+        "revoke must clear their_store"
+    );
 }
