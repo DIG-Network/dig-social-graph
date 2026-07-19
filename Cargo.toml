@@ -1,6 +1,6 @@
 [package]
 name = "dig-social-graph"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Canonical DIG social-graph core: the networkless, offer-first, symmetric, synchronous peer-connection state machine + wire types + four injected seams (Transport, EnvelopeSealer, StoreSubscriber, Persistence) that let dig-app maintain its social connections. Pure logic — no chain, no network, no crypto, no disk of its own."
