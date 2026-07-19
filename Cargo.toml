@@ -24,10 +24,17 @@ serde = { version = "1", features = ["derive"] }
 hex = "0.4"
 # Structured errors on the public API.
 thiserror = "2"
+# The DIG generic base message protocol: the BLS-G1-DHKEM auth-mode seal (`seal_message`/
+# `open_message`) + the byte-deterministic envelope + anti-replay guard the `DigMessageSealer` rides.
+# §5.4 e2e-seal — sealing to the recipient's 48-byte BLS G1 identity key, one Chia BLS keypair doing
+# BOTH the G2 sender signature AND the G1 ECDH seal. On crates.io (#681 no-git-deps).
+dig-message = "0.3.1"
+# The canonical bech32m Address codec — reconstructs a `did:chia:` string from the launcher id the
+# sealed envelope authenticates, so the sender key resolves through the same codec chip35/the wallet
+# SDK use (never hand-rolled). dig-identity re-exports the same `Bytes32`/`SecretKey` we already speak,
+# so no direct chia-bls/chia-protocol dep is needed.
+chia-sdk-utils = "0.30"
 
 [dev-dependencies]
 # A concrete codec to prove the wire + persisted types round-trip byte-stably in tests.
 serde_json = "1"
-# The canonical bech32m Address codec, used ONLY by tests to mint well-formed `did:chia:` strings
-# from a launcher id (mirrors dig-identity's own test helper). Not a runtime dependency.
-chia-sdk-utils = "0.30"

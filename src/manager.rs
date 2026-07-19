@@ -186,7 +186,7 @@ where
         sender: &Did,
         request: &ConnectRequest,
     ) -> Result<()> {
-        let their_store = self.open_offer(our_secret, &request.requestor_offer)?;
+        let their_store = self.open_offer(our_secret, sender, &request.requestor_offer)?;
         self.graph.receive_request(sender.clone(), their_store)?;
         self.persist()
     }
@@ -200,7 +200,7 @@ where
         sender: &Did,
         accept: &ConnectAccept,
     ) -> Result<()> {
-        let their_store = self.open_offer(our_secret, &accept.recipient_offer)?;
+        let their_store = self.open_offer(our_secret, sender, &accept.recipient_offer)?;
 
         // Guard-before-side-effect: validate the transition FIRST. A replayed or injected Accept on
         // a Revoked/Denied/otherwise-ineligible connection must NOT subscribe — otherwise it would
@@ -253,13 +253,43 @@ where
     }
 
     /// Open + validate a peer's sealed offer into [`StoreCoords`], decapsulating with our BLS-G1
-    /// secret key (supplied by the app, never retained — #908).
-    fn open_offer(&self, our_secret: &SecretKey, offer: &SealedOffer) -> Result<StoreCoords> {
-        let plaintext = self
+    /// secret key (supplied by the app, never retained — #908) and binding the DID identity (§5.4).
+    ///
+    /// Three checks make the offer trustworthy, in order:
+    ///
+    /// 1. The seam authenticates the sealer (its BLS-G2 signature over the chain-resolved identity
+    ///    key) and returns that identity as [`OpenedEnvelope::sender`].
+    /// 2. That authenticated sealer MUST equal the DID the envelope claims to be from
+    ///    (`declared_sender`) — otherwise an on-path relay could re-attribute a validly-sealed offer
+    ///    to a different peer.
+    /// 3. The offerer must OWN the store it offers: the offered coordinates' DID must be that same
+    ///    authenticated sealer (so nobody can seal an offer pointing at a DID they do not control).
+    ///
+    /// [`OpenedEnvelope`]: crate::seams::OpenedEnvelope
+    fn open_offer(
+        &self,
+        our_secret: &SecretKey,
+        declared_sender: &Did,
+        offer: &SealedOffer,
+    ) -> Result<StoreCoords> {
+        let opened = self
             .sealer
             .open(our_secret, &offer.ciphertext)
             .map_err(seam)?;
-        StoreCoords::from_canonical_bytes(&plaintext)
+
+        if opened.sender != declared_sender.launcher_id() {
+            return Err(Error::Invariant(
+                "sealed sender does not match the envelope's declared sender DID",
+            ));
+        }
+
+        let coords = StoreCoords::from_canonical_bytes(&opened.plaintext)?;
+        if coords.did.launcher_id() != opened.sender {
+            return Err(Error::Invariant(
+                "offered store DID does not match the authenticated sealer",
+            ));
+        }
+        Ok(coords)
     }
 
     /// Deliver a message if the peer is online, else park the connection for rendezvous.

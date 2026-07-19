@@ -10,13 +10,14 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use dig_social_graph::{
-    ConnectRequest, ConnectionState, Did, EnvelopeSealer, Result, SealedEnvelope, SealedOffer,
-    SecretKey, SocialGraphManager, SocialMessage,
+    ConnectRequest, ConnectionState, Did, EnvelopeSealer, OpenedEnvelope, Result, SealedEnvelope,
+    SealedOffer, SecretKey, SocialGraphManager, SocialMessage, StoreCoords,
 };
 
 /// A sealer that records the secret key bytes handed to every `open`, proving the seam supplies the
 /// app-held `&SecretKey` (G1 decap material, not a sign-only callback). Sealing/opening themselves
-/// are the identity function so the offered coordinates stay decodable.
+/// are the identity function so the offered coordinates stay decodable; opening authenticates the
+/// sender as the offered coordinates' own DID (mirroring the real seal).
 #[derive(Clone, Default)]
 struct RecordingSealer {
     opened_with: Rc<RefCell<Vec<[u8; 32]>>>,
@@ -27,9 +28,13 @@ impl EnvelopeSealer for RecordingSealer {
         Ok(plaintext.to_vec())
     }
 
-    fn open(&self, our_secret: &SecretKey, ciphertext: &[u8]) -> Result<Vec<u8>> {
+    fn open(&self, our_secret: &SecretKey, ciphertext: &[u8]) -> Result<OpenedEnvelope> {
         self.opened_with.borrow_mut().push(our_secret.to_bytes());
-        Ok(ciphertext.to_vec())
+        let coords = StoreCoords::from_canonical_bytes(ciphertext)?;
+        Ok(OpenedEnvelope {
+            sender: coords.did.launcher_id(),
+            plaintext: ciphertext.to_vec(),
+        })
     }
 }
 

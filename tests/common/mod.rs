@@ -11,8 +11,8 @@ use std::rc::Rc;
 use chia_sdk_utils::Address;
 use dig_identity::bls::master_secret_key_from_seed;
 use dig_social_graph::{
-    Bytes32, Did, EnvelopeSealer, Error, Persistence, Result, SealedEnvelope, SecretKey,
-    SocialGraph, StoreCoords, StoreSubscriber, Transport,
+    Bytes32, Did, EnvelopeSealer, Error, OpenedEnvelope, Persistence, Result, SealedEnvelope,
+    SecretKey, SocialGraph, StoreCoords, StoreSubscriber, Transport,
 };
 
 /// Mint a well-formed `did:chia:` DID from a single filler byte (mirrors dig-identity's test helper).
@@ -63,7 +63,9 @@ impl Transport for MockTransport {
 }
 
 /// A sealer double: sealing and opening are the identity function, so a "sealed" offer is exactly
-/// its canonical coordinate bytes (lets tests decode what was offered).
+/// its canonical coordinate bytes (lets tests decode what was offered). Opening authenticates the
+/// sender as the offered coordinates' own DID — mirroring the real seal, where an honest offerer
+/// seals its own store, so the manager's DID-binding checks are exercised.
 #[derive(Clone, Default)]
 pub struct PassthroughSealer;
 
@@ -72,8 +74,12 @@ impl EnvelopeSealer for PassthroughSealer {
         Ok(plaintext.to_vec())
     }
 
-    fn open(&self, _our_secret: &SecretKey, ciphertext: &[u8]) -> Result<Vec<u8>> {
-        Ok(ciphertext.to_vec())
+    fn open(&self, _our_secret: &SecretKey, ciphertext: &[u8]) -> Result<OpenedEnvelope> {
+        let coords = StoreCoords::from_canonical_bytes(ciphertext)?;
+        Ok(OpenedEnvelope {
+            sender: coords.did.launcher_id(),
+            plaintext: ciphertext.to_vec(),
+        })
     }
 }
 
