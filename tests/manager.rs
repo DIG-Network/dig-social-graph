@@ -3,7 +3,8 @@
 
 mod common;
 use common::{
-    make_coords, make_did, MemPersistence, MockSubscriber, MockTransport, PassthroughSealer,
+    make_coords, make_did, make_secret, MemPersistence, MockSubscriber, MockTransport,
+    PassthroughSealer,
 };
 
 use dig_social_graph::{
@@ -115,7 +116,7 @@ fn inbound_request_then_approve_subscribes_and_offers_back() {
         recipient: me.clone(),
         payload: request.to_canonical_bytes(),
     };
-    mgr.handle_incoming(&envelope).unwrap();
+    mgr.handle_incoming(&make_secret(0x01), &envelope).unwrap();
     assert_eq!(
         mgr.graph().get(&peer).unwrap().state(),
         ConnectionState::AwaitingRecipientSelect
@@ -158,7 +159,7 @@ fn outbound_accept_received_reaches_connected_and_subscribes() {
         recipient: me.clone(),
         payload: accept.to_canonical_bytes(),
     };
-    mgr.handle_incoming(&envelope).unwrap();
+    mgr.handle_incoming(&make_secret(0x01), &envelope).unwrap();
 
     let conn = mgr.graph().get(&peer).unwrap();
     assert_eq!(conn.state(), ConnectionState::Connected);
@@ -179,11 +180,14 @@ fn revoke_unsubscribes_and_terminates() {
     let accept = SocialMessage::Accept(dig_social_graph::ConnectAccept {
         recipient_offer: dig_social_graph::SealedOffer::new(their_coords.to_canonical_bytes()),
     });
-    mgr.handle_incoming(&SealedEnvelope {
-        sender: peer.clone(),
-        recipient: me.clone(),
-        payload: accept.to_canonical_bytes(),
-    })
+    mgr.handle_incoming(
+        &make_secret(0x01),
+        &SealedEnvelope {
+            sender: peer.clone(),
+            recipient: me.clone(),
+            payload: accept.to_canonical_bytes(),
+        },
+    )
     .unwrap();
 
     mgr.revoke(&peer, &me).unwrap();
@@ -203,11 +207,14 @@ fn inbound_deny_terminates_outbound_connection() {
         .unwrap();
 
     let deny = SocialMessage::Deny(dig_social_graph::ConnectDeny);
-    mgr.handle_incoming(&SealedEnvelope {
-        sender: peer.clone(),
-        recipient: me.clone(),
-        payload: deny.to_canonical_bytes(),
-    })
+    mgr.handle_incoming(
+        &make_secret(0x01),
+        &SealedEnvelope {
+            sender: peer.clone(),
+            recipient: me.clone(),
+            payload: deny.to_canonical_bytes(),
+        },
+    )
     .unwrap();
     assert_eq!(
         mgr.graph().get(&peer).unwrap().state(),
@@ -221,14 +228,19 @@ fn local_deny_notifies_and_terminates() {
     let me = make_did(0x01);
     let peer = make_did(0x02);
     let their_coords = make_coords(&peer, 0xBB);
-    mgr.handle_incoming(&SealedEnvelope {
-        sender: peer.clone(),
-        recipient: me.clone(),
-        payload: SocialMessage::Request(dig_social_graph::ConnectRequest {
-            requestor_offer: dig_social_graph::SealedOffer::new(their_coords.to_canonical_bytes()),
-        })
-        .to_canonical_bytes(),
-    })
+    mgr.handle_incoming(
+        &make_secret(0x01),
+        &SealedEnvelope {
+            sender: peer.clone(),
+            recipient: me.clone(),
+            payload: SocialMessage::Request(dig_social_graph::ConnectRequest {
+                requestor_offer: dig_social_graph::SealedOffer::new(
+                    their_coords.to_canonical_bytes(),
+                ),
+            })
+            .to_canonical_bytes(),
+        },
+    )
     .unwrap();
 
     mgr.deny(&peer, &me).unwrap();
@@ -299,12 +311,12 @@ fn replayed_accept_after_revoke_does_not_resubscribe() {
     mgr.request(peer.clone(), me.clone(), make_coords(&me, 0xAA))
         .unwrap();
     let accept = accept_envelope(&peer, &me, &their_coords);
-    mgr.handle_incoming(&accept).unwrap();
+    mgr.handle_incoming(&make_secret(0x01), &accept).unwrap();
     mgr.revoke(&peer, &me).unwrap();
 
     let subscribes_after_revoke = subscriber.subscribed.borrow().len();
     // Replay the exact same Accept the peer sent earlier.
-    assert!(mgr.handle_incoming(&accept).is_err());
+    assert!(mgr.handle_incoming(&make_secret(0x01), &accept).is_err());
     assert_eq!(
         subscriber.subscribed.borrow().len(),
         subscribes_after_revoke,
@@ -326,8 +338,11 @@ fn accept_before_consent_does_not_subscribe() {
     let their_coords = make_coords(&peer, 0xBB);
 
     // Inbound request → AwaitingRecipientSelect (not yet approved).
-    mgr.handle_incoming(&request_envelope(&peer, &me, &their_coords))
-        .unwrap();
+    mgr.handle_incoming(
+        &make_secret(0x01),
+        &request_envelope(&peer, &me, &their_coords),
+    )
+    .unwrap();
     assert_eq!(
         mgr.graph().get(&peer).unwrap().state(),
         ConnectionState::AwaitingRecipientSelect
@@ -335,7 +350,10 @@ fn accept_before_consent_does_not_subscribe() {
 
     // An injected Accept must be rejected without any subscribe.
     assert!(mgr
-        .handle_incoming(&accept_envelope(&peer, &me, &their_coords))
+        .handle_incoming(
+            &make_secret(0x01),
+            &accept_envelope(&peer, &me, &their_coords)
+        )
         .is_err());
     assert!(subscriber.subscribed.borrow().is_empty());
     assert_eq!(
@@ -355,8 +373,11 @@ fn revoke_clears_their_store() {
 
     mgr.request(peer.clone(), me.clone(), make_coords(&me, 0xAA))
         .unwrap();
-    mgr.handle_incoming(&accept_envelope(&peer, &me, &their_coords))
-        .unwrap();
+    mgr.handle_incoming(
+        &make_secret(0x01),
+        &accept_envelope(&peer, &me, &their_coords),
+    )
+    .unwrap();
     assert!(mgr.graph().get(&peer).unwrap().their_store.is_some());
 
     mgr.revoke(&peer, &me).unwrap();

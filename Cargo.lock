@@ -337,9 +337,12 @@ dependencies = [
 
 [[package]]
 name = "dig-identity"
-version = "0.2.0"
-source = "git+https://github.com/DIG-Network/dig-identity?tag=v0.2.0#45ca775be77bbd4b10043b5622d98c968167b12d"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e83081c886b941fb8a763cb8ef0f86ce17ade4f314e0569ee594b74afa9ec3c"
 dependencies = [
+ "blst",
+ "chia-bls 0.26.0",
  "chia-protocol",
  "chia-sdk-utils",
  "sha2",
@@ -349,7 +352,7 @@ dependencies = [
 
 [[package]]
 name = "dig-social-graph"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chia-sdk-utils",
  "dig-identity",

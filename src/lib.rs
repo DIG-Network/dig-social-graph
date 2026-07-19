@@ -34,7 +34,7 @@
 //! | Seam | Responsibility | Real impl (dig-app) |
 //! |------|----------------|---------------------|
 //! | [`Transport`] | relay sealed envelopes; report peer presence | mTLS peer channel |
-//! | [`EnvelopeSealer`] | seal/open to a recipient key | dig-message |
+//! | [`EnvelopeSealer`] | seal to / open from a BLS-G1 identity key | dig-message |
 //! | [`StoreSubscriber`] | subscribe/unsubscribe a profile store | Subscription |
 //! | [`Persistence`] | load/store the graph, sealed at rest | keystore sealer |
 //!
@@ -68,4 +68,6 @@ pub use wire::{
 };
 
 // Re-export the canonical Chia/DID types the public API speaks, so consumers pin the same versions.
+// `SecretKey` is the BLS-G1 identity key the [`EnvelopeSealer::open`] seam consumes for G1 decap.
+pub use dig_identity::bls::SecretKey;
 pub use dig_identity::{Bytes32, Did};
