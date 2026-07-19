@@ -129,13 +129,19 @@ keys, network, chain, and storage stays on the user side (#908).
 - **`Transport`** — `send(&SealedEnvelope)` (relay over the live mTLS peer channel; MUST NOT read the
   payload) and `is_peer_online(&Did)` (drives rendezvous). Real impl: the node peer channel
   (#980/#985).
-- **`EnvelopeSealer`** — `seal(recipient, plaintext)` / `open(our_secret, ciphertext)` to a
-  recipient's **BLS-G1 identity key** (dig-identity slot `0x0010`). `seal` takes only the recipient
-  `Did` (the impl resolves its G1 public key via `resolve_bls_public_key` and encapsulates);
-  `open` additionally takes our own `&SecretKey`, because G1 decapsulation is a Diffie-Hellman
-  (`sk · peer_g1`) over raw key material and MUST NOT be routed through a sign-only wallet callback
-  (the #908 signing seam yields signatures, not DH secrets). The app supplies the key per call; the
-  core never retains it. Real impl: dig-message DHKEM-over-G1 (#796/#1160).
+- **`EnvelopeSealer`** — `seal(recipient, plaintext) -> Vec<u8>` /
+  `open(our_secret, ciphertext) -> OpenedEnvelope` to a recipient's **BLS-G1 identity key**
+  (dig-identity slot `0x0010`). `seal` takes only the recipient `Did` (the impl resolves its G1 public
+  key via `resolve_bls_public_key` and encapsulates); `open` additionally takes our own `&SecretKey`,
+  because G1 decapsulation is a Diffie-Hellman (`sk · peer_g1`) over raw key material and MUST NOT be
+  routed through a sign-only wallet callback (the #908 signing seam yields signatures, not DH secrets).
+  The app supplies the key per call; the core never retains it. `open` returns an `OpenedEnvelope`
+  carrying the recovered plaintext **and the cryptographically-authenticated sender** (the DID launcher
+  id the seal's BLS-G2 signature attributes the message to), which the manager binds for DID validation
+  (§5). Real impl: `DigMessageSealer` over dig-message v0.3.1 `seal_message`/`open_message`
+  (BLS-G1-DHKEM auth-mode, #796/#1160), resolving keys via the injected `KeyResolver`
+  (production `ChainKeyResolver` → `resolve_bls_public_key`) and stamping/checking freshness through an
+  injected `Clock`.
 - **`StoreSubscriber`** — `subscribe(&StoreCoords)` / `unsubscribe(&StoreCoords)`. Real impl: the
   Subscription primitive (#979).
 - **`Persistence`** — `load()` / `store(&SocialGraph)`, sealed at rest in the dig-app user data dir
@@ -148,11 +154,21 @@ The manager maps lifecycle to seam actions:
 - **request** — validate our coords; seal them to the peer; record the outbound intent
   (`Requested`); if the peer is online, deliver and move to `RequestorOffered`, else park
   (`PendingRendezvous(Requested)`).
-- **inbound request** — open + validate the peer's offer; record `AwaitingRecipientSelect`. No
-  profile is served yet (consent gate).
+- **inbound request** — open + validate the peer's offer (DID validation, below); record
+  `AwaitingRecipientSelect`. No profile is served yet (consent gate).
 - **approve** — validate our coords; seal them back; **subscribe** to the peer's store; move to
   `RecipientOffered`; send the accept.
-- **inbound accept** — open + validate the peer's offer; **subscribe**; move to `Connected`.
+- **inbound accept** — open + validate the peer's offer (DID validation, below); **subscribe**; move
+  to `Connected`.
+
+**DID validation (§5.4).** Opening a peer's offer is trustworthy only after three checks, in order:
+(1) the seal authenticates the sealer via its BLS-G2 signature over the sender's chain-resolved G1
+identity key (a bad/mismatched sender key fails closed); (2) that authenticated sealer MUST equal the
+DID the envelope declares as its sender — otherwise an on-path relay could re-attribute a
+validly-sealed offer to a different peer; (3) the offered coordinates' DID MUST be that same
+authenticated sealer, so nobody can seal an offer pointing at a store DID they do not control. The
+sealer additionally enforces the dig-message anti-replay guard (a replayed envelope is rejected) and
+freshness/expiry window.
 - **deny** — notify; move to `Denied`.
 - **revoke** — **unsubscribe**; notify; move to `Revoked`.
 - **rendezvous** — a peer coming online resumes a parked connection to its suspended state.

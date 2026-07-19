@@ -16,9 +16,25 @@
 //! implementations may bridge to async I/O internally.
 
 use dig_identity::bls::SecretKey;
-use dig_identity::Did;
+use dig_identity::{Bytes32, Did};
 
 use crate::{error::Result, graph::SocialGraph, wire::SealedEnvelope};
+
+/// The authenticated result of opening a sealed envelope.
+///
+/// Opening is not merely decryption: the seal carries a BLS-G2 signature over the message, made by
+/// the sender's chain-published identity key, so a successful open PROVES which DID sealed the bytes.
+/// [`sender`](OpenedEnvelope::sender) is that cryptographically-authenticated identity — a caller MUST
+/// bind it to the identity it expected the message from (§5.4 sender authentication), otherwise an
+/// on-path relay could re-attribute a validly-sealed message to a different DID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenedEnvelope {
+    /// The launcher id of the DID that provably sealed this envelope (authenticated by the seal's
+    /// BLS-G2 sender signature over the sender's chain-resolved G1 identity key).
+    pub sender: Bytes32,
+    /// The recovered plaintext.
+    pub plaintext: Vec<u8>,
+}
 
 /// Delivers sealed envelopes to peers over the live node-to-node channel, and reports peer presence
 /// for the synchronous rendezvous.
@@ -65,12 +81,16 @@ pub trait EnvelopeSealer {
     /// it; no secret key of ours is involved.
     fn seal(&self, recipient: &Did, plaintext: &[u8]) -> Result<Vec<u8>>;
 
-    /// Open ciphertext addressed to us, returning the recovered plaintext.
+    /// Open ciphertext addressed to us, returning the recovered plaintext **and the authenticated
+    /// sender** ([`OpenedEnvelope`]).
     ///
     /// `our_secret` is our BLS-G1 identity secret key, supplied by the app for this decapsulation
     /// (G1-ECDH decap — not a signature; see the trait docs for why it must be a real key, not a
     /// sign-only callback).
-    fn open(&self, our_secret: &SecretKey, ciphertext: &[u8]) -> Result<Vec<u8>>;
+    ///
+    /// The returned [`OpenedEnvelope::sender`] is the DID launcher id the seal cryptographically
+    /// attributes the message to; the caller binds it to the expected peer (§5.4).
+    fn open(&self, our_secret: &SecretKey, ciphertext: &[u8]) -> Result<OpenedEnvelope>;
 }
 
 /// Maintains the local `.dig` store for a connected peer's profile by subscribing to its singleton.

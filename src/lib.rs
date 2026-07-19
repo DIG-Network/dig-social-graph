@@ -53,6 +53,7 @@ pub mod codec;
 pub mod error;
 pub mod graph;
 pub mod manager;
+pub mod sealer;
 pub mod seams;
 pub mod state;
 pub mod wire;
@@ -60,7 +61,11 @@ pub mod wire;
 pub use error::{Error, Result};
 pub use graph::{Connection, SocialGraph};
 pub use manager::SocialGraphManager;
-pub use seams::{EnvelopeSealer, Persistence, StoreSubscriber, Transport};
+pub use sealer::{
+    ChainKeyResolver, Clock, DigMessageSealer, KeyResolver, SystemClock, MSG_TYPE_CONNECTION_OFFER,
+    SOCIAL_GRAPH_BAND,
+};
+pub use seams::{EnvelopeSealer, OpenedEnvelope, Persistence, StoreSubscriber, Transport};
 pub use state::{ConnectionEvent, ConnectionState, Suspended};
 pub use wire::{
     ConnectAccept, ConnectDeny, ConnectRequest, Revoke, SealedEnvelope, SealedOffer, SocialMessage,
