@@ -17,6 +17,7 @@
 //!
 //! [`resume_peer`]: SocialGraphManager::resume_peer
 
+use dig_identity::bls::SecretKey;
 use dig_identity::Did;
 
 use crate::{
@@ -150,11 +151,20 @@ where
     }
 
     /// Handle an inbound sealed envelope from a peer, dispatching on the message kind.
-    pub fn handle_incoming(&mut self, envelope: &SealedEnvelope) -> Result<()> {
+    ///
+    /// `our_secret` is our BLS-G1 identity key, needed to open (decapsulate) any sealed offer the
+    /// message carries; the app supplies it per call and the core never retains it (#908 boundary).
+    pub fn handle_incoming(
+        &mut self,
+        our_secret: &SecretKey,
+        envelope: &SealedEnvelope,
+    ) -> Result<()> {
         let message = SocialMessage::from_canonical_bytes(&envelope.payload)?;
         match message {
-            SocialMessage::Request(request) => self.on_request(&envelope.sender, &request),
-            SocialMessage::Accept(accept) => self.on_accept(&envelope.sender, &accept),
+            SocialMessage::Request(request) => {
+                self.on_request(our_secret, &envelope.sender, &request)
+            }
+            SocialMessage::Accept(accept) => self.on_accept(our_secret, &envelope.sender, &accept),
             SocialMessage::Deny(_) => self.on_deny(&envelope.sender),
             SocialMessage::Revoke(_) => self.on_revoke(&envelope.sender),
         }
@@ -170,8 +180,13 @@ where
     // --- inbound handlers -------------------------------------------------------------------
 
     /// Record an inbound request: open + validate the peer's offer, park it awaiting our consent.
-    fn on_request(&mut self, sender: &Did, request: &ConnectRequest) -> Result<()> {
-        let their_store = self.open_offer(&request.requestor_offer)?;
+    fn on_request(
+        &mut self,
+        our_secret: &SecretKey,
+        sender: &Did,
+        request: &ConnectRequest,
+    ) -> Result<()> {
+        let their_store = self.open_offer(our_secret, &request.requestor_offer)?;
         self.graph.receive_request(sender.clone(), their_store)?;
         self.persist()
     }
@@ -179,8 +194,13 @@ where
     /// Complete an outbound handshake: open the peer's offer, subscribe, mark [`Connected`].
     ///
     /// [`Connected`]: crate::state::ConnectionState::Connected
-    fn on_accept(&mut self, sender: &Did, accept: &ConnectAccept) -> Result<()> {
-        let their_store = self.open_offer(&accept.recipient_offer)?;
+    fn on_accept(
+        &mut self,
+        our_secret: &SecretKey,
+        sender: &Did,
+        accept: &ConnectAccept,
+    ) -> Result<()> {
+        let their_store = self.open_offer(our_secret, &accept.recipient_offer)?;
 
         // Guard-before-side-effect: validate the transition FIRST. A replayed or injected Accept on
         // a Revoked/Denied/otherwise-ineligible connection must NOT subscribe — otherwise it would
@@ -232,9 +252,13 @@ where
         Ok(SealedOffer::new(ciphertext))
     }
 
-    /// Open + validate a peer's sealed offer into [`StoreCoords`].
-    fn open_offer(&self, offer: &SealedOffer) -> Result<StoreCoords> {
-        let plaintext = self.sealer.open(&offer.ciphertext).map_err(seam)?;
+    /// Open + validate a peer's sealed offer into [`StoreCoords`], decapsulating with our BLS-G1
+    /// secret key (supplied by the app, never retained — #908).
+    fn open_offer(&self, our_secret: &SecretKey, offer: &SealedOffer) -> Result<StoreCoords> {
+        let plaintext = self
+            .sealer
+            .open(our_secret, &offer.ciphertext)
+            .map_err(seam)?;
         StoreCoords::from_canonical_bytes(&plaintext)
     }
 

@@ -1,6 +1,6 @@
 [package]
 name = "dig-social-graph"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Canonical DIG social-graph core: the networkless, offer-first, symmetric, synchronous peer-connection state machine + wire types + four injected seams (Transport, EnvelopeSealer, StoreSubscriber, Persistence) that let dig-app maintain its social connections. Pure logic — no chain, no network, no crypto, no disk of its own."
@@ -12,11 +12,12 @@ categories = ["data-structures", "cryptography"]
 
 [dependencies]
 # The canonical DIG identity/profile format — the ONLY DIG dependency (acyclic leaf). We reference a
-# peer's profile by its store COORDINATES (its `Did` + launcher id + committed root) and speak the
-# same `Did`/`Bytes32` types dig-identity publishes, so a profile reference byte-agrees everywhere.
-# Consumed via git tag (dig-identity is not on crates.io — same pattern as dig-app), pinned to v0.2.0
-# (the IdentityProfile / DidKeys / ProfileProof line, #777).
-dig-identity = { git = "https://github.com/DIG-Network/dig-identity", tag = "v0.2.0" }
+# peer's profile by its store COORDINATES (its `Did` + launcher id + committed root), speak the same
+# `Did`/`Bytes32` types dig-identity publishes, and — since the BLS-only migration (#1169) — surface
+# its BLS12-381 `SecretKey` in the `EnvelopeSealer::open` seam so the app can supply the key material a
+# G1-ECDH decapsulation needs (slot 0x0010). Consumed from crates.io (dig-identity now publishes;
+# #681 no-git-deps), pinned to the BLS-G1 line. The default-on `bls` feature gives us `bls::SecretKey`.
+dig-identity = "0.4.1"
 # Wire + persisted-state (de)serialization. The core is format-agnostic; dig-app picks the codec.
 serde = { version = "1", features = ["derive"] }
 # Deterministic hex codec for the 32-byte on-wire identifiers (launcher id, committed root).

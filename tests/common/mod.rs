@@ -9,9 +9,10 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use chia_sdk_utils::Address;
+use dig_identity::bls::master_secret_key_from_seed;
 use dig_social_graph::{
-    Bytes32, Did, EnvelopeSealer, Error, Persistence, Result, SealedEnvelope, SocialGraph,
-    StoreCoords, StoreSubscriber, Transport,
+    Bytes32, Did, EnvelopeSealer, Error, Persistence, Result, SealedEnvelope, SecretKey,
+    SocialGraph, StoreCoords, StoreSubscriber, Transport,
 };
 
 /// Mint a well-formed `did:chia:` DID from a single filler byte (mirrors dig-identity's test helper).
@@ -21,6 +22,12 @@ pub fn make_did(filler: u8) -> Did {
         .encode()
         .expect("encodes a did:chia: address");
     Did::parse(&text).expect("parses the minted did")
+}
+
+/// A deterministic BLS-G1 secret key for tests, standing in for the app-held identity key the
+/// [`EnvelopeSealer::open`] seam needs to decapsulate an inbound offer.
+pub fn make_secret(filler: u8) -> SecretKey {
+    master_secret_key_from_seed(&[filler; 32])
 }
 
 /// Coordinates for a DID with a committed root filled from `root_filler`.
@@ -65,7 +72,7 @@ impl EnvelopeSealer for PassthroughSealer {
         Ok(plaintext.to_vec())
     }
 
-    fn open(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
+    fn open(&self, _our_secret: &SecretKey, ciphertext: &[u8]) -> Result<Vec<u8>> {
         Ok(ciphertext.to_vec())
     }
 }
