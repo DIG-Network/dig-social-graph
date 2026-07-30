@@ -420,7 +420,7 @@ dependencies = [
 
 [[package]]
 name = "dig-social-graph"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "chia-sdk-utils",
  "dig-identity",
