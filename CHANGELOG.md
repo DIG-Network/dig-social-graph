@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org) and
 [Conventional Commits](https://www.conventionalcommits.org).
 
+## [0.3.1] - 2026-07-30
+
+### CI
+- **dig-social-graph:** Add crates.io publish workflow (#1579)
+
 ## [0.3.0] - 2026-07-19
 
 ### Features
