@@ -385,9 +385,9 @@ dependencies = [
 
 [[package]]
 name = "dig-identity"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e83081c886b941fb8a763cb8ef0f86ce17ade4f314e0569ee594b74afa9ec3c"
+checksum = "5b61a73d7c4ecedfb3364e0f265946ef696dcec84ab58472873b097426691b19"
 dependencies = [
  "blst",
  "chia-bls 0.26.0",
@@ -400,9 +400,9 @@ dependencies = [
 
 [[package]]
 name = "dig-message"
-version = "0.3.1"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d22180ca414b82d6296f3d6286246e3cb7e2f787b7cc0e024b37ec6efc1388c2"
+checksum = "13efe0cfe2a6ab661f2c4f8dd947360a34c47f86118621721dfa7d21aa2dcdae"
 dependencies = [
  "chacha20poly1305",
  "chia-bls 0.26.0",
@@ -420,7 +420,7 @@ dependencies = [
 
 [[package]]
 name = "dig-social-graph"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "chia-sdk-utils",
  "dig-identity",

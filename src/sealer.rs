@@ -37,11 +37,12 @@ use crate::seams::{EnvelopeSealer, OpenedEnvelope};
 
 /// The dig-message type id of a sealed social-graph connection offer (a [`crate::wire::StoreCoords`]).
 ///
-/// dig-message groups message types into bands; the social-graph band sits after IPC (`0x0600`). The
-/// value only needs to be stable between our own seal and open — it is bound into the seal transcript
-/// so a type-confusion splice is rejected. (Follow-up: register this band upstream in dig-message's
-/// registry so no other protocol reuses it.)
-pub const SOCIAL_GRAPH_BAND: u32 = 0x0000_0700;
+/// dig-message groups message types into bands; the social-graph band sits after IPC (`0x0600`) and
+/// is now allocated to us in dig-message's own registry, so no other protocol can reuse it. We take
+/// the value FROM that registry rather than restating it — a second copy of a cross-repo constant is
+/// a future byte-drift bug, and the value is bound into the seal transcript, so a drift between the
+/// two would silently split senders from receivers.
+pub const SOCIAL_GRAPH_BAND: u32 = dig_message::registry::BAND_SOCIAL_GRAPH;
 
 /// The message type of a sealed connection offer.
 pub const MSG_TYPE_CONNECTION_OFFER: u32 = SOCIAL_GRAPH_BAND;
@@ -230,6 +231,20 @@ mod tests {
             .encode()
             .unwrap();
         Did::parse(&text).unwrap()
+    }
+
+    /// The band is a WIRE constant: it is bound into the seal transcript, so a peer running an older
+    /// build must classify our offers identically. Pinning the literal here (rather than restating
+    /// the alias, which would be a tautology) makes an upstream renumbering fail loudly as the
+    /// compatibility break it would be, and proves dig-message routes the id to our own band.
+    #[test]
+    fn connection_offer_type_is_the_registered_social_graph_band() {
+        assert_eq!(SOCIAL_GRAPH_BAND, 0x0000_0700);
+        assert_eq!(MSG_TYPE_CONNECTION_OFFER, 0x0000_0700);
+        assert_eq!(
+            dig_message::MessageType(MSG_TYPE_CONNECTION_OFFER).band(),
+            dig_message::MessageBand::SocialGraph,
+        );
     }
 
     #[test]
