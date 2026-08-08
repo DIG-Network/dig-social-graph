@@ -1,6 +1,6 @@
 [package]
 name = "dig-social-graph"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 rust-version = "1.75"
 description = "Canonical DIG social-graph core: the networkless, offer-first, symmetric, synchronous peer-connection state machine + wire types + four injected seams (Transport, EnvelopeSealer, StoreSubscriber, Persistence) that let dig-app maintain its social connections. Pure logic — no chain, no network, no crypto, no disk of its own."
@@ -28,7 +28,7 @@ thiserror = "2"
 # `open_message`) + the byte-deterministic envelope + anti-replay guard the `DigMessageSealer` rides.
 # §5.4 e2e-seal — sealing to the recipient's 48-byte BLS G1 identity key, one Chia BLS keypair doing
 # BOTH the G2 sender signature AND the G1 ECDH seal. On crates.io (#681 no-git-deps).
-dig-message = "0.3.1"
+dig-message = "0.5.1"
 # The canonical bech32m Address codec — reconstructs a `did:chia:` string from the launcher id the
 # sealed envelope authenticates, so the sender key resolves through the same codec chip35/the wallet
 # SDK use (never hand-rolled). dig-identity re-exports the same `Bytes32`/`SecretKey` we already speak,

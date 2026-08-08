@@ -138,10 +138,14 @@ keys, network, chain, and storage stays on the user side (#908).
   The app supplies the key per call; the core never retains it. `open` returns an `OpenedEnvelope`
   carrying the recovered plaintext **and the cryptographically-authenticated sender** (the DID launcher
   id the seal's BLS-G2 signature attributes the message to), which the manager binds for DID validation
-  (§5). Real impl: `DigMessageSealer` over dig-message v0.3.1 `seal_message`/`open_message`
+  (§5). Real impl: `DigMessageSealer` over dig-message `seal_message`/`open_message`
   (BLS-G1-DHKEM auth-mode, #796/#1160), resolving keys via the injected `KeyResolver`
   (production `ChainKeyResolver` → `resolve_bls_public_key`) and stamping/checking freshness through an
-  injected `Clock`.
+  injected `Clock`. A sealed connection offer carries message type `MSG_TYPE_CONNECTION_OFFER` =
+  `0x0000_0700`, the base of the social-graph band dig-message's registry reserves for this crate
+  (`dig_message::registry::BAND_SOCIAL_GRAPH`, `0x0000_0700..=0x0000_07FF`). The id MUST be taken from
+  that registry rather than restated locally: it is bound into the seal transcript, so a divergence
+  between the two values would make a type-confusion splice indistinguishable from a version skew.
 - **`StoreSubscriber`** — `subscribe(&StoreCoords)` / `unsubscribe(&StoreCoords)`. Real impl: the
   Subscription primitive (#979).
 - **`Persistence`** — `load()` / `store(&SocialGraph)`, sealed at rest in the dig-app user data dir
