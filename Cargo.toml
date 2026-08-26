@@ -1,6 +1,6 @@
 [package]
 name = "dig-social-graph"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Canonical DIG social-graph core: the networkless, offer-first, symmetric, synchronous peer-connection state machine + wire types + four injected seams (Transport, EnvelopeSealer, StoreSubscriber, Persistence) that let dig-app maintain its social connections. Pure logic — no chain, no network, no crypto, no disk of its own."
@@ -17,7 +17,7 @@ categories = ["data-structures", "cryptography"]
 # its BLS12-381 `SecretKey` in the `EnvelopeSealer::open` seam so the app can supply the key material a
 # G1-ECDH decapsulation needs (slot 0x0010). Consumed from crates.io (dig-identity now publishes;
 # #681 no-git-deps), pinned to the BLS-G1 line. The default-on `bls` feature gives us `bls::SecretKey`.
-dig-identity = "0.4.1"
+dig-identity = "0.7.1"
 # Wire + persisted-state (de)serialization. The core is format-agnostic; dig-app picks the codec.
 serde = { version = "1", features = ["derive"] }
 # Deterministic hex codec for the 32-byte on-wire identifiers (launcher id, committed root).
@@ -28,12 +28,18 @@ thiserror = "2"
 # `open_message`) + the byte-deterministic envelope + anti-replay guard the `DigMessageSealer` rides.
 # §5.4 e2e-seal — sealing to the recipient's 48-byte BLS G1 identity key, one Chia BLS keypair doing
 # BOTH the G2 sender signature AND the G1 ECDH seal. On crates.io (#681 no-git-deps).
-dig-message = "0.5.1"
+dig-message = "0.7.0"
 # The canonical bech32m Address codec — reconstructs a `did:chia:` string from the launcher id the
 # sealed envelope authenticates, so the sender key resolves through the same codec chip35/the wallet
 # SDK use (never hand-rolled). dig-identity re-exports the same `Bytes32`/`SecretKey` we already speak,
 # so no direct chia-bls/chia-protocol dep is needed.
-chia-sdk-utils = "0.30"
+#
+# This version is COUPLED to dig-identity's, not independent: `Address::new` takes a `Bytes32` we hand
+# it straight from `dig-identity`, so both must resolve to ONE chia-protocol line. Held at the ceiling
+# (0.36.0 — the newest chia-sdk-utils that chia-wallet-sdk itself pins), which is why dig-identity is
+# at 0.7.1: the 0.4 line pins chia-protocol ^0.26, and mixing the two makes the launcher id at
+# sealer.rs:165 a second, mutually unassignable `Bytes32` that fails to compile.
+chia-sdk-utils = "0.36.0"
 
 [dev-dependencies]
 # A concrete codec to prove the wire + persisted types round-trip byte-stably in tests.
